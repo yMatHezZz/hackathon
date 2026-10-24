@@ -1,0 +1,14 @@
+[
+  {"text":"Erro 500 ao salvar documentos do processo, tela apresenta falha no envio","bucket":"BUG"},
+  {"text":"Sistema com erro inesperado, não consigo acessar a tela do alvará","bucket":"BUG"},
+  {"text":"Falha técnica no carregamento do formulário e botão salvar não funciona","bucket":"BUG"},
+  {"text":"Processo bloqueado com erro ao enviar anexos, mensagem de falha","bucket":"BUG"},
+  {"text":"Adicionar campo no formulário, criar card e alterar dados solicitados","bucket":"CONSTRUIR_ALTERAR"},
+  {"text":"Configurar formulário e incluir campos obrigatórios na solicitação","bucket":"CONSTRUIR_ALTERAR"},
+  {"text":"Ajustar o fluxo da secretaria e alterar a etapa do processo","bucket":"CONSTRUIR_ALTERAR"},
+  {"text":"Preciso parametrizar os campos de documentos e taxas do alvará","bucket":"CONSTRUIR_ALTERAR"},
+  {"text":"Como acompanhar o protocolo e consultar o andamento da solicitação","bucket":"DUVIDA"},
+  {"text":"Onde encontro minha caixa e os processos protocolados","bucket":"DUVIDA"},
+  {"text":"Como preencher o cadastro e informar endereço do imóvel no formulário","bucket":"DUVIDA"},
+  {"text":"Qual orientação para consultar os documentos do processo e salvar informações","bucket":"DUVIDA"}
+]

@@ -12,6 +12,10 @@ npm-debug.log*
 artifacts/
 .playwright-mcp/
 data/
+!integrations/aprova-agent/aprova_agent/data/
+!integrations/aprova-agent/aprova_agent/data/examples.json
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+__pycache__/
+*.pyc

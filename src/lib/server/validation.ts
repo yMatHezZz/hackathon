@@ -19,13 +19,21 @@ export function status(value: unknown): TicketStatus {
 }
 export function ticketForm(value: unknown): TicketForm {
   const input = object(value);
+  if (input.attemptedAi !== undefined && typeof input.attemptedAi !== "boolean") throw new AppError("Indicador de tentativa com IA inválido.");
+  const ids = input.aiAttemptIds ?? [];
+  if (!Array.isArray(ids) || ids.length > 20) throw new AppError("Selecione até 20 tentativas com IA.");
+  const aiAttemptIds = [...new Set(ids.map(id => text(id, 50, "Tentativa")))];
+  const aiAttemptNotes = text(input.aiAttemptNotes ?? "", 2000, "Tentativas com IA", 0);
+  if ((input.attemptedAi || aiAttemptIds.length || aiAttemptNotes) && (input.origin !== "prefeitura" || input.channel !== "Formulário")) throw new AppError("Contexto de ajuste com IA é exclusivo da prefeitura.");
+  if (!input.attemptedAi && (aiAttemptIds.length || aiAttemptNotes)) throw new AppError("Informe que tentou ajustar com a IA antes de anexar o histórico.");
+  if (input.attemptedAi && !aiAttemptIds.length && aiAttemptNotes.length < 5) throw new AppError("Descreva o que tentou com a IA ou selecione uma tentativa registrada.");
   if (input.origin !== "prefeitura" && input.origin !== "requerente") throw new AppError("Ambiente inválido.");
   if (input.channel !== "Chat" && input.channel !== "Formulário") throw new AppError("Canal inválido.");
   const form: TicketForm = { name: text(input.name, 100, "Nome"), email: text(input.email, 254, "E-mail"), account: text(input.account, 150, "Conta"), description: text(input.description, 4000, "Descrição", 10), origin: input.origin, channel: input.channel, subject: input.subject === undefined ? undefined : text(input.subject, 120, "Título", 5), processId: input.processId === undefined || input.processId === "" ? undefined : text(input.processId, 30, "Processo"), priority: priority(input.priority ?? "Média") };
   const error = validateTicketForm(form);
   if (error) throw new AppError(error);
   if (form.origin === "prefeitura" && !form.processId) throw new AppError("Selecione o processo relacionado.");
-  return form;
+  return { ...form, attemptedAi: input.attemptedAi === true, aiAttemptIds, aiAttemptNotes };
 }
 export function articleInput(value: unknown): ArticleInput {
   const input = object(value);

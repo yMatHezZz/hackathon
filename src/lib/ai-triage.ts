@@ -6,7 +6,8 @@ const stopwords = new Set(["para", "como", "pelo", "pela", "esse", "essa", "esta
 const tokens = (text: string) => [...new Set(normalize(text).split(/[^a-z0-9]+/).filter(t => t.length > 2 && !stopwords.has(t)))];
 
 /** Função pura: produz somente uma nota. Não muda status, processos ou mensagens. */
-export function investigateTicket(form: Pick<Ticket, "name" | "description" | "subject" | "channel" | "processId"> | TicketForm, history: Ticket[], knowledge: KnowledgeArticle[] = []): string {
+export function investigateTicket(form: Pick<Ticket, "name" | "description" | "subject" | "channel" | "processId" | "aiContext"> | TicketForm, history: Ticket[], knowledge: KnowledgeArticle[] = []): string {
+  const aiContext = "aiContext" in form ? form.aiContext : undefined;
   const articles = findKnowledgeArticles(`${form.subject ?? ""} ${form.description}`, knowledge);
   const words = tokens(`${form.subject ?? ""} ${form.description}`);
   const similar = history.map(ticket => {
@@ -27,7 +28,7 @@ export function investigateTicket(form: Pick<Ticket, "name" | "description" | "s
 - **Impacto aparente:** Médio (Necessita análise técnica)
 ### 2. Evidências observadas
 - O solicitante informou: “${escape(form.description.slice(0, 200))}”.
-- ${upload ? "O relato menciona documentos ou envio de arquivos; nenhum arquivo foi inspecionado." : blocked ? "O relato menciona bloqueio ou acesso; nenhuma permissão real foi consultada." : "A análise usa somente o texto do formulário e o histórico local."}
+${aiContext ? `- O analista relatou tentativa de ajuste com IA; ${aiContext.attempts.length} registro(s) foram anexados ao chamado. ${escape(aiContext.notes.slice(0, 350))}\n` : ""}- ${upload ? "O relato menciona documentos ou envio de arquivos; nenhum arquivo foi inspecionado." : blocked ? "O relato menciona bloqueio ou acesso; nenhuma permissão real foi consultada." : "A análise usa somente o texto do formulário e o histórico local."}
 ${articles.length ? articles.map(article => `- Base de conhecimento: ${escape(article.title)} (${escape(article.id)}), revisada em ${escape(article.updatedAt.slice(0, 10))}.`).join("\n") : "- Nenhum artigo ativo da base de conhecimento corresponde ao relato."}
 ### 3. Chamados semelhantes encontrados
 ${similar.length ? similar.map(({ ticket, shared }) => `- #${escape(ticket.id)}: Termos em comum: ${shared.map(escape).join(", ")} — ${ticket.status === "Resolvido" ? "Resolvido" : "Pendente"}`).join("\n") : "- Nenhum chamado semelhante encontrado com pelo menos dois termos relevantes em comum."}

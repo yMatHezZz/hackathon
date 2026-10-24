@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { resolve, sep } from "node:path";
 import { HubRepository } from "../../src/lib/server/repository";
 import { initialProcesses } from "../../src/lib/demo-data";
+import { importPylon } from "../../scripts/import-pylon.mjs";
 
 test.beforeEach(() => {
   const filename = resolve(process.env.ZENITH_DB_PATH!);
@@ -10,7 +11,7 @@ test.beforeEach(() => {
   if (!filename.startsWith(root)) throw new Error("Os testes só podem preparar bancos dentro de artifacts/e2e.");
   new HubRepository(filename).close();
   const db = new DatabaseSync(filename);
-  db.exec("PRAGMA busy_timeout=5000; BEGIN IMMEDIATE; DELETE FROM messages; DELETE FROM tickets; DELETE FROM knowledge; DELETE FROM process_protocols; DELETE FROM processes; UPDATE hub_meta SET revision=revision+1 WHERE id=1;");
+  db.exec("PRAGMA busy_timeout=5000; BEGIN IMMEDIATE; UPDATE agent_settings SET enabled=0 WHERE id=1; DELETE FROM agent_runs; DELETE FROM agent_training; DELETE FROM messages; DELETE FROM tickets; DELETE FROM knowledge; DELETE FROM form_ai_attempts; DELETE FROM process_protocols; DELETE FROM processes; UPDATE hub_meta SET revision=revision+1 WHERE id=1;");
   for (const process of initialProcesses) db.prepare("INSERT INTO processes(id,payload) VALUES (?,?)").run(process.id, JSON.stringify(process));
   db.exec("COMMIT"); db.close();
 });
@@ -27,10 +28,321 @@ async function openTicket(page: Page) {
   await expect(page.getByText("O chamado foi aberto e a equipe técnica já está analisando.", { exact: false })).toBeVisible();
 }
 
+async function openProcessForm(page: Page, portal = "requerente") {
+  const link = page.getByRole("link", { name: "Solicitar processo Alvará 001", exact: true });
+  await expect(link).toHaveAttribute("target", "_blank");
+  await expect(link).toHaveText("SOLICITAR PROCESSO");
+  const [form] = await Promise.all([page.waitForEvent("popup"), link.click()]);
+  await form.waitForURL(`**/${portal}/processos/001`);
+  await expect(form.getByRole("heading", { name: "Alvará 001 · Formulário", exact: true })).toBeVisible();
+  return form;
+}
+
+const agentQuestion = "Como consultar os processos protocolados da Minha caixa?";
+test("artigos Pylon têm fonte original e agente publica link clicável", async ({ page }) => {
+  const sourceUrl = "https://aprova.help.usepylon.com/articles/7941598447-exclus-o-de-conta-no-sistema";
+  importPylon(process.env.ZENITH_DB_PATH!, [{ id: "PYLON-00000000-0000-0000-0000-000000000099", title: "Exclusão de conta no sistema", category: "Acesso", tags: ["conta"], content: "## Orientação ao cliente\nPara solicitar a exclusão da conta, procure a Prefeitura responsável pelo serviço.", active: true, source: "Pylon · Base pública", sourceStatus: "Publicado", sourceUrl, fetchState: "ok" }]);
+  await page.goto("/support/conhecimento");
+  await page.getByRole("textbox", { name: "Buscar artigos" }).fill("Exclusão de conta no sistema");
+  const source = page.getByRole("link", { name: "Abrir artigo original no Pylon", exact: false });
+  await expect(source).toHaveAttribute("href", sourceUrl);
+  await expect(source).toHaveAttribute("target", "_blank");
+  await page.request.patch("/api/agent", { headers: { origin: "http://localhost:3100" }, data: { enabled: true } });
+  await page.goto("/requerente/caixa");
+  await page.getByRole("button", { name: "Ajuda", exact: true }).click();
+  await page.getByLabel("Nome completo").fill("Ana Fonte");
+  await page.getByLabel("E-mail", { exact: true }).fill("ana.fonte@example.com");
+  await page.getByLabel("Prefeitura / Conta", { exact: true }).fill("Prefeitura Modelo");
+  await page.getByLabel("Descrição do impedimento").fill("Como solicitar a exclusão da minha conta no sistema?");
+  await page.getByRole("button", { name: "Abrir chamado", exact: true }).click();
+  const citation = page.getByRole("dialog").getByRole("link", { name: sourceUrl, exact: true });
+  await expect(citation).toHaveAttribute("href", sourceUrl, { timeout: 15000 });
+  await expect(citation).toHaveAttribute("target", "_blank");
+});
+const agentAnswer = "Acesse Minha caixa para consultar os processos já protocolados e o número do protocolo.";
+async function seedResponseAgent(page: Page, kind = "solution", reply = agentAnswer) {
+  const headers = { origin: "http://localhost:3100" };
+  const articleResponse = await page.request.post("/api/knowledge", { headers, data: { title: "Consultar processos na Minha caixa", category: "Orientação pública", tags: ["caixa", "processos"], active: true, content: `## Orientação ao cliente\n${agentAnswer}` } });
+  expect(articleResponse.status()).toBe(201);
+  const snapshot = (await articleResponse.json()).snapshot;
+  const source = snapshot.knowledge.find((article: { title: string }) => article.title === "Consultar processos na Minha caixa");
+  const training = await page.request.post("/api/agent", { headers, data: { action: "train", example: { text: agentQuestion, bucket: "DUVIDA", kind, reply, articleIds: [source.id], active: true } } });
+  expect(training.status()).toBe(200);
+  expect((await page.request.patch("/api/agent", { headers, data: { enabled: true } })).status()).toBe(200);
+}
+
+test("agente Python responde ao requerente automaticamente com base e sem duplicar", async ({ page }) => {
+  await seedResponseAgent(page);
+  await page.goto("/requerente/caixa");
+  await page.getByRole("button", { name: "Ajuda", exact: true }).click();
+  await page.getByLabel("Nome completo").fill("Ana Agente");
+  await page.getByLabel("E-mail", { exact: true }).fill("ana.agent@example.com");
+  await page.getByLabel("Prefeitura / Conta", { exact: true }).fill("Prefeitura Modelo");
+  await page.getByLabel("Descrição do impedimento").fill(agentQuestion);
+  await page.getByRole("button", { name: "Abrir chamado", exact: true }).click();
+  await expect(page.getByRole("dialog").getByText(agentAnswer, { exact: true })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole("dialog").getByText("Assistente Aprova", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Fechar ajuda" }).click();
+  await page.goto("/requerente/suporte");
+  await expect(page.getByLabel("Meu chamado selecionado").getByText(agentAnswer, { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Meu chamado selecionado").getByText(agentAnswer, { exact: true })).toHaveCount(1);
+  await expect(page.getByText("Nota interna", { exact: false })).toHaveCount(0);
+});
+
+test("solução municipal exige aprovação humana antes de aparecer no histórico", async ({ page }) => {
+  await seedResponseAgent(page);
+  await page.goto("/prefeitura/suporte/novo");
+  await page.getByLabel("Título", { exact: true }).fill("Consultar processos na Minha caixa");
+  await page.getByLabel("Descrição detalhada do problema").fill(agentQuestion);
+  await page.getByRole("combobox", { name: "Processo relacionado", exact: true }).selectOption("001");
+  await page.getByRole("button", { name: "Solicitar", exact: true }).click();
+  await expect(page.getByText("A equipe está revisando uma mensagem de solução antes de enviar.", { exact: true })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText(agentAnswer, { exact: true })).toHaveCount(0);
+  await page.goto("/support/chamados");
+  await page.getByLabel("Lista de chamados").getByRole("button").filter({ hasText: "Consultar processos na Minha caixa" }).click();
+  const panel = page.getByLabel("Resposta do agente Aprova");
+  await expect(panel.getByLabel("Mensagem do agente para aprovação")).toHaveValue(agentAnswer);
+  await panel.getByRole("button", { name: "Aprovar e enviar mensagem", exact: true }).click();
+  await expect(panel.getByRole("heading", { name: "Mensagem do agente enviada", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Status do chamado")).toHaveValue("Aberto");
+  await panel.screenshot({ path: "artifacts/e2e/agent-approval.png" });
+  await page.goto("/prefeitura/suporte");
+  await expect(page.getByText(agentAnswer, { exact: true })).toBeVisible();
+});
+
+test("agente pede complemento ao analista sem exigir aprovação e permite responder", async ({ page }) => {
+  const question = "Qual número do protocolo você deseja consultar?";
+  await seedResponseAgent(page, "clarification", question);
+  await page.goto("/prefeitura/suporte/novo");
+  await page.getByLabel("Título", { exact: true }).fill("Consulta precisa de complemento");
+  await page.getByLabel("Descrição detalhada do problema").fill(agentQuestion);
+  await page.getByRole("combobox", { name: "Processo relacionado", exact: true }).selectOption("001");
+  await page.getByRole("button", { name: "Solicitar", exact: true }).click();
+  await expect(page.getByText(question, { exact: true })).toBeVisible({ timeout: 15000 });
+  await page.getByText("Complementar informações do chamado", { exact: true }).click();
+  await page.getByLabel("Informações complementares", { exact: true }).fill("O protocolo é o processo 001, preciso localizar o cadastro da solicitação.");
+  await page.getByRole("button", { name: "Enviar informações ao suporte", exact: true }).click();
+  await expect(page.getByText("O protocolo é o processo 001, preciso localizar o cadastro da solicitação.", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText(question, { exact: true })).toHaveCount(1);
+});
+
+test("treinamento salva exemplo revisado e testa o agente real sem publicar", async ({ page }) => {
+  const headers = { origin: "http://localhost:3100" };
+  await page.request.post("/api/knowledge", { headers, data: { title: "Consultar processos na Minha caixa", category: "Ajuda", tags: ["caixa"], active: true, content: `## Orientação ao cliente\n${agentAnswer}` } });
+  await page.goto("/support/treinamento");
+  await expect(page.getByRole("heading", { name: "Agente local conectado", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Novo exemplo", exact: true }).click();
+  const editor = page.getByRole("dialog");
+  await editor.getByLabel("Mensagem de exemplo", { exact: true }).fill(agentQuestion);
+  await editor.getByLabel("Resposta revisada", { exact: true }).fill(agentAnswer);
+  await editor.getByLabel("Usar fonte Consultar processos na Minha caixa", { exact: true }).check();
+  await editor.getByRole("button", { name: "Salvar exemplo", exact: true }).click();
+  await expect(editor).not.toBeVisible();
+  await page.reload();
+  await expect(page.getByText(agentQuestion, { exact: true })).toBeVisible();
+  await page.getByLabel("Mensagem para testar", { exact: true }).fill(agentQuestion);
+  await page.getByRole("combobox", { name: "Ambiente do teste", exact: true }).selectOption("prefeitura");
+  await page.getByRole("button", { name: "Testar resposta do agente", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Exige aprovação");
+  await expect(page.getByRole("status")).toContainText(agentAnswer);
+  const hub = await (await page.request.get("/api/hub")).json();
+  expect(hub.tickets).toHaveLength(0);
+  await page.screenshot({ path: "artifacts/e2e/agent-training-desktop.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Ativar tema escuro", exact: true }).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("requerente consulta apenas seus tickets e continua o atendimento após recarga", async ({ page }) => {
+  await openTicket(page);
+  await page.getByRole("button", { name: "Fechar ajuda" }).click();
+  const response = await page.request.post("/api/tickets", { headers: { origin: "http://localhost:3100" }, data: { name: "Outra Pessoa", email: "outra@example.com", account: "Prefeitura Modelo", origin: "requerente", channel: "Chat", description: "Chamado exclusivo da outra pessoa para suporte." } });
+  expect(response.status()).toBe(201);
+  await page.getByRole("link", { name: "Meus chamados", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Meus chamados", exact: true })).toBeVisible();
+  await expect(page.getByText("Chamado exclusivo da outra pessoa", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("Nota interna", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("Investigação inicial automática", { exact: false })).toHaveCount(0);
+  await page.getByLabel("Enviar mais informações").fill("Conferi o cadastro e continuo com o impedimento.");
+  await page.getByRole("button", { name: "Enviar mensagem ao suporte", exact: true }).click();
+  await expect(page.getByLabel("Meu chamado selecionado").getByText("Conferi o cadastro e continuo com o impedimento.", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Meu chamado selecionado").getByText("Conferi o cadastro e continuo com o impedimento.", { exact: true })).toBeVisible();
+  await page.getByLabel("Buscar nos meus chamados").fill("inexistente");
+  await expect(page.getByRole("heading", { name: "Nenhum chamado encontrado", exact: true })).toBeVisible();
+  await page.getByLabel("Buscar nos meus chamados").fill("");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Ativar tema escuro", exact: true }).click();
+  await page.screenshot({ path: "artifacts/e2e/citizen-history-mobile-dark.png" });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole("button", { name: "Trocar perfil de demonstração" }).click();
+  await page.getByLabel("Nome do requerente", { exact: true }).fill("Perfil sem chamados");
+  await page.getByLabel("E-mail do requerente", { exact: true }).fill("vazio@example.com");
+  await page.getByLabel("Prefeitura / Conta do requerente").fill("Prefeitura Modelo");
+  await page.getByRole("button", { name: "Consultar meus chamados" }).click();
+  await expect(page.getByRole("heading", { name: "Você ainda não tem chamados nesta conta", exact: true })).toBeVisible();
+});
+
+test("analista escala tentativa de IA com histórico persistente e contexto no suporte", async ({ page }) => {
+  await page.goto("/prefeitura/formularios");
+  const chat = page.getByLabel("Chat de IA do formulário");
+  await expect(chat.getByRole("link", { name: "Pedir ajuda ao suporte", exact: true })).toHaveCount(0);
+  const chatBox = await chat.boundingBox();
+  const previewBox = await page.getByLabel("Prévia do formulário", { exact: true }).boundingBox();
+  expect(chatBox!.x).toBeLessThan(previewBox!.x);
+  expect(chatBox!.width).toBeGreaterThan(previewBox!.width);
+  const promptBox = await chat.getByLabel("Pedido para a IA do formulário").boundingBox();
+  expect(promptBox!.y + promptBox!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  await page.screenshot({ path: "artifacts/e2e/editor-chat-first-desktop.png" });
+  await chat.getByRole("button", { name: "Adicionar campo", exact: true }).click();
+  await chat.getByRole("button", { name: "Executar ajuste", exact: true }).click();
+  await expect(page.getByLabel("Ponto de referência", { exact: true })).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Ajustando...", exact: true })).toHaveCount(0);
+  await page.reload();
+  await chat.getByText("Histórico salvo de tentativas (1)", { exact: true }).click();
+  await expect(chat.getByText("Aplicado ao rascunho da sessão", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Ponto de referência", { exact: true })).toHaveCount(0);
+  await chat.getByRole("link", { name: "Pedir ajuda ao suporte", exact: true }).click();
+  await expect(page.getByLabel("Processo relacionado")).toHaveValue("001");
+  await expect(page.getByLabel("Tentei ajustar o formulário com a IA", { exact: true })).toBeChecked();
+  await page.getByLabel("Descrição detalhada do problema").fill("Tentei adicionar o campo pelo copiloto, mas preciso de revisão da equipe técnica.");
+  await page.getByLabel("O que você tentou com a IA?", { exact: true }).fill("A tentativa funcionou no rascunho, mas preciso validar a configuração antes de publicar.");
+  await page.getByRole("button", { name: "Solicitar", exact: true }).click();
+  await expect(page).toHaveURL(/\/prefeitura\/suporte$/);
+  const history = page.getByLabel("Histórico de tentativas com IA");
+  await expect(history).toContainText("A tentativa funcionou no rascunho");
+  await history.getByText("Histórico anexado (1 tentativas)", { exact: true }).click();
+  await expect(history.getByText('Adicionar campo "Ponto de referência" obrigatório', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(history).toContainText("A tentativa funcionou no rascunho");
+  await page.goto("/support/chamados");
+  await page.getByLabel("Lista de chamados").getByRole("button").filter({ hasText: "Apoio no ajuste do formulário com IA" }).click();
+  await expect(page.getByLabel("Histórico de tentativas com IA")).toContainText("A tentativa funcionou no rascunho");
+  await page.getByLabel("Histórico de tentativas com IA").getByText("Histórico anexado (1 tentativas)", { exact: true }).click();
+  await expect(page.getByLabel("Histórico de tentativas com IA").getByText('Adicionar campo "Ponto de referência" obrigatório', { exact: true })).toBeVisible();
+  await page.getByLabel("Histórico de tentativas com IA").screenshot({ path: "artifacts/e2e/ai-escalation-support.png" });
+});
+
+test("sidebar mostra solicitante, histórico acessível e ações do agente", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  const common = { name: "Ana Histórico", email: "ana.historico@example.com", account: "Prefeitura Modelo", origin: "prefeitura", channel: "Formulário", description: "Alvará 001 bloqueado para envio de informações.", processId: "001", priority: "Alta" };
+  const create = async (subject: string, account = common.account) => {
+    const response = await page.request.post("/api/tickets", { headers: { origin: "http://localhost:3100" }, data: { ...common, subject, account } });
+    expect(response.status()).toBe(201); return (await response.json()).ticketId as string;
+  };
+  const old = await create("Chamado anterior de cadastro");
+  await create("Chamado de outra prefeitura", "Outra Prefeitura");
+  await create("Chamado atual do alvará");
+  await page.goto("/support/chamados");
+  await page.getByLabel("Lista de chamados").getByRole("button").filter({ hasText: "Chamado atual do alvará" }).click();
+  const sidebar = page.getByLabel("Assistente de IA");
+  await expect(page.getByLabel("Detalhes do chamado").locator("dl")).toHaveCount(0);
+  await expect(page.getByLabel("Detalhes do chamado").getByText(common.email, { exact: true })).toHaveCount(0);
+  await sidebar.getByRole("tab", { name: "Solicitante", exact: true }).click();
+  await expect(sidebar.getByText(common.email, { exact: true })).toBeVisible();
+  await expect(sidebar.getByText("Approve · Prefeitura", { exact: true })).toBeVisible();
+  await sidebar.getByRole("tab", { name: "Solicitante", exact: true }).press("ArrowRight");
+  await expect(sidebar.getByRole("tab", { name: "Histórico", exact: true })).toBeFocused();
+  await expect(sidebar.getByText("Chamado anterior de cadastro", { exact: true })).toBeVisible();
+  await expect(sidebar.getByText("Chamado de outra prefeitura", { exact: true })).toHaveCount(0);
+  await sidebar.getByLabel("Buscar no histórico do solicitante").fill("inexistente");
+  await expect(sidebar.getByText("Nenhum chamado corresponde à busca.")).toBeVisible();
+  await sidebar.getByLabel("Buscar no histórico do solicitante").fill("");
+  await sidebar.screenshot({ path: "artifacts/e2e/requester-history-desktop.png" });
+  await sidebar.getByRole("button", { name: `Consultar chamado ${old}`, exact: true }).click();
+  await expect(page.getByLabel("Detalhes do chamado").getByRole("heading", { name: "Chamado anterior de cadastro", exact: true })).toBeVisible();
+  await sidebar.getByLabel("Comando para a IA").fill("Desbloquear Alvará 001");
+  await sidebar.getByRole("button", { name: "Executar comando" }).click();
+  await expect(sidebar.getByLabel("Ações registradas do agente")).toContainText("Alvará 001 desbloqueado pela IA");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Ativar tema escuro", exact: true }).click();
+  await sidebar.getByRole("tab", { name: "Solicitante", exact: true }).click();
+  await expect(sidebar.getByText(common.email, { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("chat ajusta formulário com base ativa, desfaz e publica após revisão", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  const article = await page.request.post("/api/knowledge", { headers: { origin: "http://localhost:3100" }, data: { title: "Responsável técnico do alvará", category: "Formulários", tags: ["responsável", "alvará"], active: true, content: "## Campos recomendados\n- Nome do responsável técnico (texto, obrigatório)\n- E-mail do responsável técnico (email)\n\nConfira os dados informados antes de protocolar." } });
+  expect(article.status()).toBe(201);
+  await page.goto("/prefeitura/formularios");
+  const chat = page.getByLabel("Chat de IA do formulário");
+  await chat.getByRole("button", { name: "Usar base de conhecimento", exact: true }).click();
+  await chat.getByRole("button", { name: "Executar ajuste", exact: true }).click();
+  await expect(chat.getByText("Base consultada", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Nome do responsável técnico", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("E-mail do responsável técnico", { exact: true })).toBeVisible();
+  await chat.getByRole("button", { name: "Desfazer ajuste", exact: true }).click();
+  await expect(page.getByLabel("Nome do responsável técnico", { exact: true })).toHaveCount(0);
+  await chat.getByRole("button", { name: "Adicionar card", exact: true }).click();
+  await chat.getByLabel("Pedido para a IA do formulário").fill('Adicionar card "Dados do negócio" com campos "Nome fantasia", "Telefone comercial"');
+  await chat.getByRole("button", { name: "Executar ajuste", exact: true }).click();
+  await expect(page.getByLabel("Nome fantasia", { exact: true })).toBeVisible();
+  await chat.getByLabel("Seção de destino do ajuste").selectOption({ label: "Dados do negócio" });
+  await chat.getByLabel("Pedido para a IA do formulário").fill('"Referência comercial" obrigatório');
+  await chat.getByRole("button", { name: "Adicionar campo", exact: true }).click();
+  await expect(chat.getByLabel("Pedido para a IA do formulário")).toHaveValue('Adicionar campo "Referência comercial" obrigatório');
+  await chat.getByRole("button", { name: "Executar ajuste", exact: true }).click();
+  await expect(page.getByLabel("Referência comercial", { exact: true })).toBeVisible();
+  await chat.screenshot({ path: "artifacts/e2e/form-copilot-desktop.png" });
+  await page.getByRole("button", { name: "Publicar formulário", exact: true }).click();
+  await expect(page.getByText("Configuração publicada.", { exact: false })).toBeVisible();
+  await page.goto("/requerente/processos/001");
+  await expect(page.getByLabel("Referência comercial", { exact: true })).toHaveAttribute("required", "");
+  await page.getByLabel("Referência comercial", { exact: true }).fill("Ao lado da escola");
+  await page.getByRole("button", { name: "Salvar informações" }).click();
+  await expect(page.getByText("Rascunho salvo no banco local.", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Referência comercial", { exact: true })).toHaveValue("Ao lado da escola");
+  await page.goto("/prefeitura/formularios");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Ativar tema escuro", exact: true }).click();
+  await chat.getByRole("button", { name: "Adicionar campo", exact: true }).click();
+  await expect(chat.getByLabel("Pedido para a IA do formulário")).toBeFocused();
+  await chat.screenshot({ path: "artifacts/e2e/form-copilot-mobile-dark.png" });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("chat preserva rascunho em falha e edição concorrente", async ({ page }) => {
+  await page.goto("/prefeitura/formularios");
+  await expect(page.getByRole("tab", { name: "Editor JSON", exact: true })).toHaveCount(0);
+  const preview = page.getByLabel("Prévia do formulário", { exact: true });
+  const before = await preview.getByLabel("Telefone de contato", { exact: true }).inputValue();
+  const chat = page.getByLabel("Chat de IA do formulário");
+  await page.route("**/form-assistant", route => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Assistente temporariamente indisponível." }) }));
+  await chat.getByRole("button", { name: "Adicionar campo", exact: true }).click();
+  const prompt = await chat.getByLabel("Pedido para a IA do formulário").inputValue();
+  await chat.getByRole("button", { name: "Executar ajuste", exact: true }).click();
+  await expect(chat.getByRole("alert")).toContainText("Assistente temporariamente indisponível");
+  await expect(chat.getByLabel("Pedido para a IA do formulário")).toHaveValue(prompt);
+  await expect(preview.getByLabel("Telefone de contato", { exact: true })).toHaveValue(before);
+  await page.unroute("**/form-assistant");
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/form-assistant", async route => { const response = await route.fetch(); await gate; await route.fulfill({ response }); });
+  await chat.getByRole("button", { name: "Executar ajuste", exact: true }).click();
+  await expect(chat.getByRole("button", { name: "Ajustando...", exact: true })).toBeDisabled();
+  await page.getByLabel("Ajustes manuais do formulário").getByText("Editar campos", { exact: true }).first().click();
+  await page.getByRole("button", { name: "Editar Telefone de contato", exact: true }).click();
+  await page.getByLabel("Rótulo do campo", { exact: true }).fill("Telefone ajustado manualmente");
+  await page.getByRole("button", { name: "Aplicar campo", exact: true }).click();
+  release();
+  await expect(chat.getByRole("alert")).toContainText("O formulário mudou durante a análise");
+  await expect(preview.getByLabel("Telefone ajustado manualmente", { exact: true })).toHaveValue(before);
+  await expect(chat.getByLabel("Pedido para a IA do formulário")).toHaveValue(prompt);
+  await page.unroute("**/form-assistant");
+});
+
 test("formulário low code publica campo, persiste resposta e preserva protocolo", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
-  await page.goto("/prefeitura");
+  await page.goto("/prefeitura/processos");
   await page.getByRole("link", { name: "Configurar formulários" }).click();
   await page.getByLabel("Modelo de processo").selectOption("001");
   await page.getByRole("button", { name: "Adicionar campo em Dados do imóvel" }).click();
@@ -43,13 +355,13 @@ test("formulário low code publica campo, persiste resposta e preserva protocolo
   await page.reload();
   await expect(page.getByLabel("Ponto de referência", { exact: true })).toBeVisible();
   await page.screenshot({ path: "artifacts/e2e/form-builder-desktop.png" });
-  await page.getByRole("tab", { name: "Editor JSON", exact: true }).click();
-  const json = page.getByLabel("Configuração JSON");
-  const published = await json.inputValue();
-  await json.fill('{"version":');
-  await expect(page.getByRole("button", { name: "Publicar formulário", exact: true })).toBeDisabled();
+  await expect(page.getByLabel("Configuração JSON")).toHaveCount(0);
+  await page.getByRole("button", { name: "Remover card Taxas", exact: true }).click();
+  await expect(page.getByLabel("Valor informado (R$)", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Desfazer remoção", exact: true }).click();
+  await expect(page.getByLabel("Valor informado (R$)", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Recarregar publicado" }).click();
-  await expect(json).toHaveValue(published);
+  await expect(page.getByRole("button", { name: "Publicar formulário", exact: true })).toBeDisabled();
   await page.goto("/requerente/processos/001");
   await page.getByLabel("Ponto de referência", { exact: true }).fill("Próximo à praça central");
   await page.getByRole("button", { name: "Salvar informações", exact: true }).click();
@@ -60,6 +372,7 @@ test("formulário low code publica campo, persiste resposta e preserva protocolo
   await expect(page).toHaveURL(/\/requerente\/processos\/PRC-/);
   const protocolUrl = page.url();
   await page.goto("/prefeitura/formularios");
+  await page.getByLabel("Ajustes manuais do formulário").getByText("Editar campos", { exact: true }).nth(2).click();
   await page.getByRole("button", { name: "Remover Ponto de referência", exact: true }).click();
   await page.getByRole("button", { name: "Publicar formulário", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Configuração publicada" })).toBeVisible();
@@ -68,7 +381,7 @@ test("formulário low code publica campo, persiste resposta e preserva protocolo
   await expect(page.getByLabel("Ponto de referência", { exact: true })).toBeDisabled();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/prefeitura/formularios");
-  await expect(page.getByRole("heading", { name: "Formulários do seu jeito.", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Descreva. Ajuste. Publique.", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Ativar tema escuro", exact: true }).click();
   await page.screenshot({ path: "artifacts/e2e/form-builder-mobile-dark.png" });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -81,11 +394,20 @@ test("fluxo completo, nota interna isolada e processo atualizado", async ({ page
   await openTicket(page);
   await expect(page.getByText("Investigação inicial automática", { exact: false })).toHaveCount(0);
   await page.getByRole("button", { name: "Fechar ajuda" }).click();
-  await page.getByRole("link", { name: "Abrir suporte", exact: true }).click();
+  await page.goto("/support/chamados");
   if (!page.url().includes("/support/chamados")) await page.getByRole("link", { name: "Chamados", exact: true }).click();
   await expect(page.getByText("Nenhum chamado selecionado")).toBeVisible();
   await page.getByRole("button").filter({ hasText: "Ana Demonstração" }).click();
   await expect(page.getByRole("heading", { name: "Investigação inicial automática", exact: true })).toBeVisible();
+  const analysis = page.getByLabel("Análise interna da IA");
+  await expect(analysis.getByText("Próxima ação sugerida", { exact: true })).toBeVisible();
+  await expect(analysis.getByRole("heading", { name: "1. Resumo do chamado", exact: true })).not.toBeVisible();
+  await analysis.getByText("Ver investigação completa", { exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(analysis.getByRole("heading", { name: "1. Resumo do chamado", exact: true })).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(analysis.getByRole("heading", { name: "1. Resumo do chamado", exact: true })).not.toBeVisible();
+  await page.getByLabel("Detalhes do chamado").screenshot({ path: "artifacts/e2e/ticket-clean-desktop.png" });
   const panel = page.getByLabel("Assistente de IA");
   const commandButton = page.getByRole("button", { name: "Executar comando" });
   const panelBox = await panel.locator("..").boundingBox();
@@ -95,6 +417,7 @@ test("fluxo completo, nota interna isolada e processo atualizado", async ({ page
   await page.getByLabel("Comando para a IA").fill("Não desbloquear Alvará 001");
   await page.getByRole("button", { name: "Executar comando" }).click();
   await expect(page.getByText("Comando não reconhecido.", { exact: false })).toBeVisible();
+  await page.getByLabel("Assistente de IA").getByRole("tab", { name: "Agente", exact: true }).click();
   await page.getByLabel("Comando para a IA").fill("Desbloquear Alvará 001");
   await page.getByRole("button", { name: "Executar comando" }).click();
   await expect(page.getByText("Ação executada: Alvará 001 desbloqueado pela IA").first()).toBeVisible();
@@ -102,6 +425,7 @@ test("fluxo completo, nota interna isolada e processo atualizado", async ({ page
   await page.getByLabel("Resposta ao solicitante").fill("Processo liberado para análise. Pode continuar o envio.");
   await page.getByRole("button", { name: "Enviar resposta" }).click();
   await page.getByRole("link", { name: "Abrir requerente", exact: true }).click();
+  await page.getByRole("link", { name: "Processos", exact: true }).click();
   const process = page.getByRole("row").filter({ hasText: "Alvará 001" });
   await expect(process).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Status", exact: true })).toHaveCount(0);
@@ -139,7 +463,7 @@ test("mobile, formulário inválido e foco do diálogo por teclado", async ({ pa
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await expect(help).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.getByRole("link", { name: "Abrir suporte", exact: true }).click();
+  await page.goto("/support/chamados");
   if (!page.url().includes("/support/chamados")) await page.getByRole("link", { name: "Chamados", exact: true }).click();
   await expect(page.getByText("Nenhum chamado selecionado")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -148,18 +472,18 @@ test("mobile, formulário inválido e foco do diálogo por teclado", async ({ pa
 test("prefeitura edita processo, solicita suporte e consulta histórico próprio sem chat", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
-  await page.goto("/prefeitura");
+  await page.goto("/prefeitura/processos");
   await expect(page.getByRole("button", { name: "Ajuda", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Ver detalhes de Alvará 001" }).click();
-  await expect(page.getByRole("dialog")).toBeVisible();
+  page = await openProcessForm(page, "prefeitura");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByLabel("Endereço do estabelecimento").fill("Rua Nova Demonstração, 321");
   await page.getByLabel("Atividade / Finalidade").fill("Comércio de livros e café");
   await page.getByRole("button", { name: "Salvar informações" }).click();
-  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await expect(page.getByText("Rascunho salvo no banco local.", { exact: true })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Status", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Ver detalhes de Alvará 001" }).click();
+  await page.reload();
   await expect(page.getByLabel("Endereço do estabelecimento")).toHaveValue("Rua Nova Demonstração, 321");
-  await page.getByRole("button", { name: "Fechar detalhes" }).click();
+  await page.getByRole("link", { name: "Voltar aos processos", exact: true }).click();
   await page.getByRole("link", { name: "Histórico de suporte", exact: true }).click();
   await expect(page.getByText("Nenhuma solicitação de suporte ainda")).toBeVisible();
   await page.getByRole("link", { name: "Abrir suporte", exact: true }).click();
@@ -178,18 +502,19 @@ test("prefeitura edita processo, solicita suporte e consulta histórico próprio
   await expect(page.getByRole("heading", { name: "Investigação inicial automática", exact: true })).toBeVisible();
   await expect(page.getByText("Canal:", { exact: true }).locator("..")).toContainText("Formulário");
   await expect(page.getByText(/tipo (da|de) conta/i)).toHaveCount(0);
+  await page.getByLabel("Assistente de IA").getByRole("tab", { name: "Agente", exact: true }).click();
   await page.getByLabel("Comando para a IA").fill("Desbloquear Alvará 001");
   await page.getByRole("button", { name: "Executar comando" }).click();
   await expect(page.getByText("Ação executada: Alvará 001 desbloqueado pela IA").first()).toBeVisible();
   await page.getByLabel("Resposta ao solicitante").fill("Liberação concluída. Continue a análise do processo.");
   await page.getByRole("button", { name: "Enviar resposta" }).click();
   await page.getByRole("link", { name: "Abrir prefeitura", exact: true }).click();
+  await page.getByRole("link", { name: "Processos", exact: true }).click();
   await expect(page.getByRole("row").filter({ hasText: "Alvará 001" })).toBeVisible();
   await page.getByRole("link", { name: "Histórico de suporte", exact: true }).click();
   await expect(page.getByText("Liberação concluída. Continue a análise do processo.")).toBeVisible();
-  await page.getByRole("link", { name: "Início Nolyp", exact: true }).click();
-  await page.getByRole("link", { name: "Entrar como requerente", exact: true }).click();
-  await page.getByRole("link", { name: "Preencher Alvará 001", exact: true }).click();
+  await page.goto("/requerente/processos");
+  page = await openProcessForm(page);
   await expect(page.getByLabel("Endereço do estabelecimento")).toHaveValue("Rua Nova Demonstração, 321");
   await expect(page.getByRole("button", { name: "Salvar informações" })).toBeVisible();
   await page.getByRole("link", { name: "Voltar aos processos", exact: true }).click();
@@ -201,8 +526,7 @@ test("prefeitura edita processo, solicita suporte e consulta histórico próprio
 test("ticket de chat não aparece no histórico municipal e o formulário municipal é responsivo", async ({ page }) => {
   await openTicket(page);
   await page.getByRole("button", { name: "Fechar ajuda" }).click();
-  await page.getByRole("link", { name: "Início Nolyp", exact: true }).click();
-  await page.getByRole("link", { name: "Entrar como analista", exact: true }).click();
+  await page.goto("/prefeitura/processos");
   await page.getByRole("link", { name: "Histórico de suporte", exact: true }).click();
   await expect(page.getByRole("button").filter({ hasText: "Preciso de ajuda para continuar." })).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -228,7 +552,8 @@ test("histórico municipal e prioridade sobrevivem à recarga", async ({ page })
   await page.getByRole("link", { name: "Chamados", exact: true }).click();
   await page.getByRole("button").filter({ hasText: "Persistência do Alvará 001" }).click();
   await expect(page.getByLabel("Prioridade do chamado")).toHaveValue("Alta");
-  await expect(page.getByText("Approve · Prefeitura", { exact: true }).last()).toBeVisible();
+  await page.getByLabel("Assistente de IA").getByRole("tab", { name: "Solicitante", exact: true }).click();
+  await expect(page.getByLabel("Assistente de IA").getByText("Approve · Prefeitura", { exact: true })).toBeVisible();
   await page.getByLabel("Prioridade do chamado").selectOption("Urgente");
   await expect(page.getByLabel("Prioridade do chamado")).toBeEnabled();
   await page.reload();
@@ -248,8 +573,7 @@ test("base de conhecimento salva artigos e orienta novas investigações", async
   await expect(page.getByRole("heading", { name: "Alvará bloqueado por cadastro pendente", exact: true })).toBeVisible();
   await openTicket(page);
   await page.getByRole("button", { name: "Fechar ajuda" }).click();
-  await page.getByRole("link", { name: "Abrir suporte", exact: true }).click();
-  await page.getByRole("link", { name: "Chamados", exact: true }).click();
+  await page.goto("/support/chamados");
   await page.getByRole("button").filter({ hasText: "Ana Demonstração" }).click();
   await expect(page.getByRole("heading", { name: "Investigação inicial automática", exact: true })).toBeVisible();
   await expect(page.locator(".internal-markdown")).toContainText("ZENITH-BASE");
@@ -267,10 +591,10 @@ test("base de conhecimento salva artigos e orienta novas investigações", async
 
 test("protocolar mantém o modelo disponível, registra solicitação e preserva o suporte na página", async ({ page }) => {
   await page.goto("/requerente");
-  await page.getByRole("tab", { name: "Protocolados", exact: true }).click();
+  await page.getByRole("link", { name: "Minha caixa", exact: true }).click();
   await expect(page.getByText("Nenhum processo encontrado.")).toBeVisible();
-  await page.getByRole("tab", { name: "Disponíveis para protocolar", exact: true }).click();
-  await page.getByRole("link", { name: "Preencher Alvará 001", exact: true }).click();
+  await page.getByRole("link", { name: "Processos", exact: true }).click();
+  page = await openProcessForm(page);
   await expect(page).toHaveURL(/\/requerente\/processos\/001$/);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "Ajuda", exact: true }).click();
@@ -282,10 +606,10 @@ test("protocolar mantém o modelo disponível, registra solicitação e preserva
   await page.reload();
   await expect(page.getByText("Solicitação protocolada", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Voltar aos processos", exact: true }).click();
-  await expect(page.getByRole("tab", { name: "Protocolados", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("link", { name: "Minha caixa", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("link", { name: "Consultar Alvará 001", exact: true })).toBeVisible();
-  await page.getByRole("tab", { name: "Disponíveis para protocolar", exact: true }).click();
-  await expect(page.getByRole("link", { name: "Preencher Alvará 001", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Processos", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Solicitar processo Alvará 001", exact: true })).toBeVisible();
 });
 
 test("tema escuro acompanha todos os ambientes e sobrevive à recarga", async ({ page }) => {
@@ -324,31 +648,38 @@ test("falha na gravação mantém formulário e não inventa sucesso", async ({ 
   await expect(page.getByLabel("Título", { exact: true })).toHaveValue("Falha de gravação controlada");
 });
 
-test("portais exibem processos sem status e acesso aos ambientes somente pelo header", async ({ page }) => {
-  for (const route of ["/requerente", "/prefeitura"]) {
+test("portais têm caixa e processos em páginas distintas e requerente sem links no header", async ({ page }) => {
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/requerente\/caixa$/);
+  await expect(page.getByRole("heading", { name: "Minha caixa", exact: true })).toBeVisible();
+  for (const route of ["/requerente/processos", "/prefeitura/processos"]) {
     await page.goto(route);
     await expect(page.getByRole("navigation").getByRole("link", { name: "Portal do requerente" })).toHaveCount(0);
     await expect(page.getByRole("navigation").getByRole("link", { name: "Portal da prefeitura" })).toHaveCount(0);
-    await expect(page.getByRole("banner").getByRole("link", { name: "Abrir requerente", exact: true })).toBeVisible();
-    await expect(page.getByRole("banner").getByRole("link", { name: "Abrir prefeitura", exact: true })).toBeVisible();
+    if (route.startsWith("/requerente")) await expect(page.getByRole("banner").getByRole("link")).toHaveCount(0);
+    else await expect(page.getByRole("banner").getByRole("link", { name: "Abrir requerente", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Minha caixa", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Processos", exact: true })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByText("Revise as informações dos processos", { exact: false })).toHaveCount(0);
     await expect(page.getByRole("columnheader", { name: "Status", exact: true })).toHaveCount(0);
     await expect(page.getByLabel("Filtrar processos por status")).toHaveCount(0);
     await expect(page.getByText("Bloqueados", { exact: true })).toHaveCount(0);
-    if (route === "/requerente") {
-      await page.getByRole("link", { name: "Preencher Alvará 001", exact: true }).click();
+    if (route.startsWith("/requerente")) {
+      page = await openProcessForm(page);
       await expect(page).toHaveURL(/\/requerente\/processos\/001$/);
       continue;
     }
-    await page.getByRole("button", { name: "Ver detalhes de Alvará 001" }).click();
-    await expect(page.getByRole("dialog").getByText("Bloqueado", { exact: true })).toHaveCount(0);
-    await page.getByRole("button", { name: "Fechar detalhes" }).click();
+    page = await openProcessForm(page, "prefeitura");
+    await expect(page.getByText("Bloqueado", { exact: true })).toHaveCount(0);
+    await page.getByRole("link", { name: "Voltar aos processos", exact: true }).click();
   }
 });
 
 test("requerente preenche modelo de alvará e recupera as cinco seções após recarregar", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/requerente");
-  await page.getByRole("link", { name: "Preencher Alvará 001", exact: true }).click();
+  await page.goto("/requerente/processos");
+  page = await openProcessForm(page);
+  await page.setViewportSize({ width: 390, height: 844 });
   const dialog = page.getByRole("main");
   for (const title of ["Dados do requerente", "Tipo da solicitação", "Dados do imóvel", "Documentos complementares", "Taxas"]) {
     await expect(dialog.getByRole("group", { name: new RegExp(title) })).toBeVisible();
