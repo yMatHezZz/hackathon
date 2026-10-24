@@ -1,5 +1,74 @@
 # Validação do MVP
 
+## CSV Pylon e fontes públicas — 24/10/2026
+
+- Arquivo real utilizado: `C:/Users/Valde/Downloads/pylon_articles.csv`, 64 registros. Metadados: 58 publicados, 5 com alterações pendentes (versão pública obtida) e 1 rascunho. Todas as 63 URLs públicas pertencem a `aprova.help.usepylon.com`; 63 conteúdos extraídos, nenhuma falha. Rascunho importado inativo.
+- Importação real no SQLite: 64 inserções. Segunda execução: 0 inserções/atualizações, 64 inalterados. Base anterior preservada. Índice e relatório em `data/pylon`, ignorados pelo Git.
+- Agente testado na API local contra a base real: pergunta sobre exclusão de conta retornou `solution`, fonte “Exclusão de conta no sistema” e URL pública correspondente. Sem criação de chamado nesse teste. Base mostra Abrir artigo original; respostas incluem URL clicável.
+- `npm test`: 43 testes aprovados; testes novos cobrem domínio/URLs, importação idempotente, edições manuais preservadas e execução real do agente com fonte Pylon. `python tests/test_pylon_parser.py`: 2 testes aprovados (extração do corpo, exclusão de menus/scripts e restrição de URLs).
+- Lint e TypeScript aprovados. Playwright: 24 cenários aprovados em 1,2 minuto, com build de produção e banco isolado; novo cenário verifica link original na base e link clicável na resposta automática. Primeira rodada encontrou seletor de busca inadequado, corrigido para o nome acessível real antes de repetir a suíte.
+- Revisão manual: importador CLI restrito ao domínio público aprovado, redirecionamentos limitados, respostas HTML até 2 MB, corpo de artigo limitado, conteúdo privado/rascunho/falha inativo; transação SQL e IDs estáveis; edições manuais protegidas. Links públicos validados em renderização e na resposta do agente. Codex Security não executado.
+- Limites: busca usa conteúdo indexado na importação, não navegação ao vivo em cada chamado. Atualização disponível pelos dois scripts documentados; imagens não passam por OCR. Não foram seguidos automaticamente links para outros domínios.
+
+## Agente Aprova real e treinamento — 24/10/2026
+
+- Núcleo público incorporado do commit `08e6f8110886c9ed807974a05838a69fadf207ab`, sem alterar os cinco módulos Python originais. Ponte local `runner.py` usa `Agent(use_llm=False)`; nenhuma chamada a LLM externo. Seed fictício versionável, sem dataset original de chamados reais. Proveniência em `integrations/aprova-agent/UPSTREAM.md`.
+- Runtime real confirmado por stdin e pela API local: `ready: true`, `engine: aprova-agent-mvp@08e6f811`, `mode: local`, `llm: false`; automação ativa no banco local. Migration 004 adiciona configurações, exemplos e fila sem apagar dados.
+- `npm test`: 40 testes aprovados em 7 arquivos. Casos do agente: execução Python real, resposta fundamentada, procedimento interno não publicado, idempotência, aprovação municipal, pergunta automática, intervenção humana concorrente, pausa/resolução, persistência de fila/treinamento, reprocessamento e fontes desativadas.
+- `npm run test:e2e`: 23 cenários aprovados em 1,1 minuto contra build de produção. Novos: chat do requerente recebe resposta sem clique do atendente e sem duplicar após recarga; solução municipal fica invisível no histórico até aprovação; complemento é enviado sem aprovação e o analista pode responder; treino salva/recupera exemplo e teste real não cria tickets. Suíte anterior roda com automação pausada no banco isolado, para preservar os testes manuais; cenários novos ativam explicitamente o agente.
+- Lint, TypeScript e build final aprovados. Primeira rodada E2E encontrou seletores exatos inadequados para labels de selects; foram trocados por comboboxes com nome acessível e toda a suíte passou. Nenhuma asserção funcional removida.
+- Visual conferido em `agent-training-desktop.png` e `agent-approval.png` dentro de `artifacts/e2e` (ignorados pelo Git). Treinamento também verificado em largura 390 px e tema escuro, sem overflow horizontal.
+- Revisão manual focada: processo Python sem shell ou rede, entrada/saída e tempo limitados, UTF-8 preservado; rotas com verificação de origem/localhost; SQL parametrizado; fila com lease/token, chave única por mensagem e gravação idempotente; conversa e fontes revalidadas antes de publicar/aprovar. Artigos internos não viram solução pública sem seção destinada ao cliente ou exemplo revisado. Codex Security não executado; revisão manual não equivale a scan.
+- Limites: execução local requer Python 3.9+; não é fine tuning nem LLM generativo. Perfil permanece demonstrativo, sem autenticação real. A recuperação depende da qualidade dos artigos/exemplos, sem garantia de solução para todos os chamados; ausência de orientação encaminha à equipe. Não resolve status ou altera processos automaticamente. Nenhum deploy, commit ou push efetuado neste incremento.
+
+## Solicitar processo em nova aba — 24/10/2026
+
+Botão SOLICITAR PROCESSO destacado nos modelos dos dois portais, com abertura em nova aba e aviso acessível. Página de preenchimento municipal reutiliza formulário/protocolo e oferece suporte técnico sem chat; processos já protocolados mantêm consulta.
+
+`npm run test:e2e`: 19 cenários aprovados em 57,3 segundos, com build de produção. Verificado popup real, URL por portal, título do formulário, salvamento/reabertura, protocolo e preenchimento em largura móvel. Lint e TypeScript aprovados. Sem alterações no banco ou regras de negócio neste incremento.
+
+## Aumento de fontes — 24/10/2026
+
+Escala central em CSS: textos pequenos e legendas aumentados em cerca de 2 px; `text-xs` passa a 14 px, `text-sm` a 16 px e `text-base` a 17 px. Links e Markdown também ampliados, títulos preservados. Botões do formulário passaram a quebrar linha no celular; campo do chat compacto mantém visibilidade no desktop. Causas verificadas por medidas do DOM, sem enfraquecer as asserções de layout.
+
+`npm run lint`, `npm run typecheck` e build de produção aprovados. `npm run test:e2e`: 19 cenários aprovados em 1,0 minuto após corrigir os dois pontos de layout. Conferência visual no editor e cobertura móvel/tema escuro pelos cenários existentes. Nenhuma alteração de dados ou regras de negócio.
+
+## Portais e editor com foco no chat — 24/10/2026
+
+- `npm test`: 34 testes aprovados. `npm run lint` e `npm run typecheck`: aprovados. `npm run test:e2e`: 19 cenários aprovados em 52,6 segundos contra build de produção.
+- Navegação: `/` redireciona para `/requerente/caixa`; Minha caixa e Processos usam páginas diferentes nos dois portais; página inicial promocional removida. Header do requerente sem links; menu lateral e móvel com rótulos; texto “Revise as informações…” ausente.
+- Editor: chat à esquerda, maior que a prévia à direita, com campo de mensagem dentro do viewport desktop testado. Sem editor JSON na interface. Ajustes manuais abaixo da prévia; remoção de card Taxas e desfazer verificados; edição manual concorrente preservada; campos e protocolos continuam persistentes.
+- Suporte de edição: link ausente antes do primeiro prompt; aparece com tentativa registrada; servidor recusa ticket com contexto de IA se o processo ainda não recebeu prompt. Suporte técnico geral preservado e histórico municipal identificado com clareza.
+- Visual conferido em `artifacts/e2e/editor-chat-first-desktop.png`, `form-builder-mobile-dark.png` e `citizen-history-mobile-dark.png`; arquivos ignorados pelo Git. Layout móvel e tema escuro cobertos pelos cenários; sem overflow horizontal nas verificações.
+- Revisão manual focada da regra no servidor; sem novas dependências, migrations ou alteração destrutiva neste incremento. Codex Security não executado. IA e perfil seguem demonstrativos, sem autenticação real.
+
+## Limpeza visual da conversa — 24/10/2026
+
+- Dados do solicitante removidos do topo da conversa; continuam disponíveis na sidebar. Status e prioridade preservados como controles compactos.
+- Nota da IA com hipótese/próxima ação visíveis e investigação completa expansível; texto salvo e fontes preservados. HTML do Markdown continua bloqueado.
+- `npm run lint` e `npm run typecheck`: aprovados. `npm run test:e2e`: 19 testes aprovados em 1,1 minuto, com build de produção. Verificado: ausência da ficha/e-mail no centro, dados disponíveis na sidebar, expansão/recolhimento por Enter e alteração persistida de prioridade.
+- Visual desktop conferido em `artifacts/e2e/ticket-clean-desktop.png`, ignorado pelo Git. Sem alteração no banco, nos endpoints ou na lógica de triagem neste ajuste visual.
+
+## Histórico do requerente e encaminhamento da IA — 24/10/2026
+
+- `npm test`: 34 testes aprovados em 6 arquivos. Casos novos: histórico visual do requerente por origem/e-mail/conta, ausência de dados sem perfil, tentativas recuperadas após reabrir SQLite, resultados registrados, IDs vinculados ao processo, limite de 20 anexos, cópia imutável no ticket e recusa de IDs inexistentes/de outro processo.
+- `npm run test:e2e`: 19 testes aprovados em 51,2 segundos contra build de produção. Novo fluxo do requerente verifica histórico próprio, ausência de dados de outra pessoa/notas internas, envio e recuperação de mensagem após recarga, busca vazia, perfil sem chamados e tela móvel em tema escuro. Fluxo do analista verifica tentativa aplicada ao rascunho, recuperação do histórico sem reaplicação automática, encaminhamento ao suporte com observações e histórico persistido nos dois ambientes.
+- Lint e TypeScript: aprovados. Build executado pelo Playwright. Na primeira execução houve um seletor de teste ambíguo entre conversa da página e widget fechado; o seletor foi delimitado ao chamado selecionado e toda a suíte foi repetida com sucesso.
+- Migration 003 aditiva cria `form_ai_attempts`, sem exclusão de registros. Dados de teste em banco isolado dentro de `artifacts/e2e`. Cópia do ticket contém resultados, fontes e observações; atualizar o registro original não altera essa cópia.
+- Conferência visual: `citizen-history-mobile-dark.png` e `ai-escalation-support.png` em `artifacts/e2e` (ignorados pelo Git). Layout móvel sem overflow horizontal no cenário testado.
+- Revisão manual: origem/localhost e limite de corpo mantidos nas APIs; validação de IDs/processo/transições e consultas parametrizadas; contexto recebido do cliente reconstruído a partir do banco. Codex Security não executado; revisão manual não equivale a scan.
+- Limites: o perfil do requerente é uma seleção de demonstração lembrada no navegador, sem autenticação ou isolamento de API para usuários reais. Histórico do editor mostra as 50 tentativas mais recentes; chamado aceita até 20. Tentativas que não chegam ao servidor não são registradas. Rascunhos não publicados não são reaplicados após recarregar.
+
+## Copiloto contextual e histórico — 24/10/2026
+
+- `npm test`: 32 testes aprovados em 5 arquivos. Novos cenários cobrem histórico por e-mail/conta, ordenação, card com campos vindos de artigo ativo, exclusão de artigos inativos, adição/renomeação, instruções desconhecidas e embutidas nos artigos, endpoint sem publicação/revisão alterada e recusa de ajustes em protocolos.
+- `npm run test:e2e`: 16 testes aprovados em 51,6 segundos contra build de produção; mais um cenário novo aprovado separadamente com `--grep "chat preserva"`, verificando falha de API e resposta concorrente a edição manual. Total: 17 cenários cobertos; a suíte completa foi executada antes da inclusão desse último teste.
+- `npm run lint` e `npm run typecheck`: aprovados. Build de produção executado nas duas chamadas do Playwright. Banco de teste isolado em `artifacts/e2e`; banco e artigos reais não alterados.
+- Fluxos novos: sidebar com Solicitante/Histórico/Agente; setas do teclado; busca vazia e abertura de chamado anterior; conta diferente excluída; log de ação executada; chat usa artigo ativo, cria campos, desfaz, aceita atalho com detalhes já escritos e publica explicitamente; campo criado aceita resposta e recupera valor após recarga.
+- Visual conferido: histórico desktop, chat desktop e chat móvel de 390 px em tema escuro; sem overflow horizontal ou erros JavaScript nos cenários. Capturas locais ignoradas pelo Git: `requester-history-desktop.png`, `form-copilot-desktop.png`, `form-copilot-mobile-dark.png` em `artifacts/e2e`.
+- Revisão manual focada: endpoint mantém proteção de origem/localhost, limite de corpo e validação do schema; artigos são referência textual, sem execução de comandos; sem acesso a serviços externos ou mudança destrutiva do banco. Codex Security não executado; revisão manual não equivale a scan do produto.
+- Limites: IA é um interpretador local de comandos delimitados, sinalizado na UI; card significa seção. Campos derivados da base exigem lista de descritores reconhecida; caso contrário o assistente pede os nomes. Conversa permanece na sessão; publicação e persistência continuam explícitas. Não inclui autenticação real.
+
 ## Incremento de formulários configuráveis — 24/10/2026
 
 - `npm test`: 27 testes aprovados em 4 arquivos. Casos novos: schema inválido, IDs duplicados/inseguros, obrigatoriedade/opções/tipos, respostas desconhecidas, configuração e respostas após reabrir SQLite, isolamento por modelo, conflitos de revisão e schema congelado no protocolo.

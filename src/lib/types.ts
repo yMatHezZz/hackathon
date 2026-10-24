@@ -1,10 +1,22 @@
+import type { AgentRun } from "./agent-types";
 export type TicketStatus = "Aberto" | "Em atendimento" | "Resolvido";
 export type ProcessStatus = "Bloqueado" | "Em Análise" | "Aprovado";
 export type MessageKind = "customer" | "support" | "internal" | "log";
 export interface Message { id: string; kind: MessageKind; content: string; createdAt: string }
 export type Portal = "requerente" | "prefeitura";
 export type TicketPriority = "Baixa" | "Média" | "Alta" | "Urgente";
+export interface RequesterProfile { name: string; email: string; account: string }
+export interface FormAiAttempt {
+  id: string; processId: string; prompt: string; message: string; changes: string[];
+  sources: { id: string; title: string; excerpt: string }[];
+  createdAt: string;
+  outcome: "prepared" | "applied" | "not_applied" | "failed" | "undone" | "no_change";
+}
+export interface TicketAiContext { processId: string; formRevision: number; notes: string; attempts: FormAiAttempt[] }
 export interface TicketForm {
+  attemptedAi?: boolean;
+  aiAttemptNotes?: string;
+  aiAttemptIds?: string[];
   name: string;
   email: string;
   account: string;
@@ -16,6 +28,8 @@ export interface TicketForm {
   priority?: TicketPriority;
 }
 export interface Ticket extends Omit<TicketForm, "origin" | "subject"> {
+  agentRuns?: AgentRun[];
+  aiContext?: TicketAiContext;
   origin: Portal | "historico";
   id: string;
   subject: string;
@@ -29,6 +43,9 @@ export interface Ticket extends Omit<TicketForm, "origin" | "subject"> {
   triage: "pending" | "complete" | "failed" | "none";
 }
 export interface KnowledgeArticle {
+  sourceUrl?: string;
+  sourceFetchedAt?: string;
+  importedAt?: string;
   id: string;
   title: string;
   category: string;
@@ -49,7 +66,7 @@ export interface HubSnapshot {
   knowledge: KnowledgeArticle[];
   revision: number;
 }
-export interface ReplyDraft { content: string; sources: { id: string; title: string }[] }
+export interface ReplyDraft { content: string; sources: { id: string; title: string; url?: string }[] }
 export interface MutationResult { snapshot: HubSnapshot; ticketId?: string; message?: string; draft?: ReplyDraft; processId?: string }
 export interface ProcessInformation {
   customFields?: Record<string, string | boolean>;

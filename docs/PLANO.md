@@ -1,5 +1,43 @@
 # Zenith Support Hub — três ambientes
 
+## Importação Pylon por CSV e fontes públicas
+
+Ler `Downloads/pylon_articles.csv`, importar metadados e obter conteúdo das URLs públicas listadas, restrito ao domínio observado e sem seguir links internos indiscriminadamente. Guardar conteúdo/relatório em `data/pylon` ignorado pelo Git; importação SQLite idempotente e preservação de edições manuais. Rascunhos, falhas e itens sem permissão pública ficam inativos. Disponibilizar fonte original na base e nas respostas do agente, com links seguros/clicáveis. Validar extração HTML, URLs, duplicação, agente com fonte importada e dados persistidos; executar importação real autorizada e registrar contagens.
+
+## Integração do agente Aprova e treinamento
+
+Integrar o núcleo Python real do repositório indicado, fixado por commit e executado localmente sem LLM externo. Exemplos iniciais fictícios; base ativa e exemplos revisados do SQLite orientam as respostas. Fila durável por mensagem pública do cliente, execução assíncrona, prevenção de duplicidade e invalidação de propostas quando a conversa muda. Requerente/chat: resposta automática; prefeitura: solução exige aprovação humana, pergunta de complementação pode ser automática. Triagem permanece interna e independente; não resolver status nem executar comandos de processo automaticamente.
+
+Treinamento no suporte: exemplos rotulados, resposta esperada/tipo e fontes, ativação, teste sem publicar, saúde do runtime e controle de automação. Não é fine tuning de LLM. Configurações e exemplos persistentes; fila recuperável após reinício, erro visível e reprocessamento explícito. Testar agente Python real, decisões por origem/tipo, fontes inativas, persistência, idempotência, resposta humana concorrente, aprovação obsoleta e fluxo UI completo. Não enviar dados a serviços externos nem usar o servidor upstream com CORS aberto.
+
+## Acesso à solicitação de processo
+
+Trocar a ação dos modelos por SOLICITAR PROCESSO, com botão azul destacado e formulário em nova aba nos dois portais. Reutilizar a página de preenchimento por portal, preservando suporte do cidadão e formulário de suporte municipal sem chat. Processos protocolados continuam com consulta. Validar popup, preenchimento, salvamento e protocolo no navegador, incluindo móvel.
+
+## Legibilidade da aplicação
+
+Aumentar a escala tipográfica pequena em cerca de 2 px, incluindo rótulos, legendas, textos, controles, links e Markdown, por configuração central de CSS. Preservar títulos e espaçamento geral. Validar layout e ausência de overflow no celular, tema escuro e fluxo do editor/suporte com os checks existentes.
+
+## Navegação dos portais e editor centrado no chat
+
+Separar Minha caixa (protocolados) e Processos (modelos) em rotas por portal, com menu lateral rotulado e navegação móvel. Remover landing promocional: `/` abre o portal do requerente. Sem links de troca de ambiente no header do requerente. Editor: chat principal à esquerda, prévia à direita, ajustes manuais abaixo da prévia, remoção de cards com proteção dos campos essenciais e opção de desfazer; remover editor JSON da UI. Suporte de edição só aparece após tentativa recebida pelo servidor e mantém histórico anexável. Manter suporte municipal geral separado e claro. Preservar dados e alterações pendentes. Validar novas rotas, chat/prévia, remoção/desfazer, bloqueio do suporte antes do prompt, persistência e regressões em desktop/mobile/escuro; atualizar testes que dependiam da navegação anterior.
+
+## Ajuste visual do atendimento
+
+Remover a ficha de dados do solicitante acima da conversa e sua repetição no header, preservando a aba Solicitante da sidebar. Manter status/prioridade como controles compactos. Apresentar investigação da IA com hipótese e próxima ação em destaque discreto; evidências, fontes e texto original acessíveis em expansão. Preservar Markdown completo, dados e regras de negócio. Validar sidebar, expansão por teclado, controles, tema e fluxos existentes com Playwright, lint e tipos.
+
+## Incremento: histórico do requerente e escalonamento da IA
+
+Objetivo: `/requerente/suporte` com perfil fictício lembrado no navegador, chamados filtrados por origem/e-mail/conta, consulta de respostas públicas e continuação do atendimento. Corrigir seleção do widget para respeitar o mesmo perfil. Persistir tentativas do editor no SQLite, incluindo resultado aplicado/não aplicado/desfeito, e reabrir esse histórico após recarga. Analista pode abrir solicitação pelo editor e revisar tentativas/notas anexadas; servidor reconstrói o contexto a partir dos IDs e congela uma cópia no ticket.
+
+Contratos: migration 003 aditiva para tentativas; GET/POST no assistente e PATCH de resultado por tentativa; no máximo 20 tentativas anexadas por ticket. Notas internas nunca aparecem ao requerente. Sem autenticação real: perfil serve somente à demonstração local. Preservar mudanças pendentes do incremento anterior na branch atual. Validação: isolamento visual por perfil, persistência após reabrir SQLite, vínculo/limites das tentativas, histórico imutável no ticket e fluxos E2E de requerente/analista/suporte, mobile/escuro, lint/tipos/build.
+
+## Incremento: copiloto contextual e histórico do solicitante
+
+Objetivo: sidebar do suporte com botões Agente, Solicitante e Histórico; identificação por e-mail + conta, abertura de chamados anteriores no painel e eventos de ações do agente. Editor de formulários recebe chat local com atalhos Adicionar card/campo, Renomear campo e Tornar obrigatório, consultando artigos ativos do SQLite e aplicando mudanças validadas no rascunho com opção de desfazer. Card significa seção. Publicação continua explícita.
+
+Contratos: `requester-history` é função pura; `form-assistant` recebe schema, prompt, intenção e seção e devolve schema/alterações/fontes. Endpoint local POST sem escrita; publica pelo endpoint já existente com revisão. Artigos são dados de referência, nunca comandos. Sem API externa ou novas dependências. Etapas: testes de domínio e integração; sidebar; chat e integração ao construtor; navegador desktop/mobile/escuro, lint, tipos e build. Aceite: abrir chamado anterior da mesma pessoa/conta sem misturar homônimos; solicitar card/campo com contexto da base, visualizar alteração, desfazer e publicar mantendo protocolos históricos.
+
 ## Nolyp, playbook e protocolo
 
 - [x] Importar o ZIP explicitamente indicado pela equipe: Markdown e imagens locais, origem rastreável, importação idempotente, nenhuma execução de arquivos anexados. Conteúdo privado em `data/`, sem envio externo ou commit. Revisar/redigir possíveis credenciais sem reproduzi-las.
