@@ -1,0 +1,17 @@
+"use client";
+import Link from "next/link";
+import { ArrowRight, BookOpen, CheckCircle2, CircleDot, Clock3, Ticket } from "lucide-react";
+import { useGlobal } from "@/context/GlobalContext";
+import { Badge, Card } from "@/components/ui";
+import { PriorityBadge } from "@/components/support/TicketMetadata";
+export default function SupportOverview() {
+  const { tickets, knowledge, loading } = useGlobal();
+  const current = tickets.filter(ticket => ticket.origin !== "historico");
+  const metrics = [{ label: "Chamados registrados", value: current.length, icon: Ticket }, { label: "Em aberto", value: current.filter(ticket => ticket.status === "Aberto").length, icon: CircleDot }, { label: "Em atendimento", value: current.filter(ticket => ticket.status === "Em atendimento").length, icon: Clock3 }, { label: "Resolvidos", value: current.filter(ticket => ticket.status === "Resolvido").length, icon: CheckCircle2 }];
+  return <div className="px-5 py-8 lg:px-8"><p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">Workspace / Visão geral</p><h1 className="text-3xl font-bold tracking-tight">Central de suporte<span className="text-blue-600 dark:text-blue-400">.</span></h1><p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">Chamados persistidos, contexto do solicitante e conhecimento para apoiar o atendimento.</p>
+    <div className="my-7 grid grid-cols-2 gap-3 xl:grid-cols-4">{metrics.map(metric => <Card key={metric.label} className="p-5"><div className="flex justify-between gap-2 text-xs text-slate-500 dark:text-slate-400"><span>{metric.label}</span><metric.icon size={17} className="text-blue-500" /></div><p className="mt-4 text-3xl font-bold">{loading ? "—" : metric.value.toString().padStart(2, "0")}</p></Card>)}</div>
+    <div className="grid gap-5 lg:grid-cols-[1fr_320px]"><Card className="overflow-hidden"><div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 p-5"><h2 className="text-sm font-bold">Chamados recentes</h2><Link href="/support/chamados" className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400">Ver chamados<ArrowRight size={13} /></Link></div>{current.length ? current.slice(0, 6).map(ticket => <Link key={ticket.id} href="/support/chamados" className="block border-b border-slate-100 dark:border-slate-700 p-5 hover:bg-slate-50 dark:hover:bg-slate-950"><div className="flex flex-wrap justify-between gap-2"><p className="text-sm font-semibold">{ticket.subject}</p><PriorityBadge priority={ticket.priority} /></div><p className="my-2 break-all text-xs text-slate-500 dark:text-slate-400">{ticket.email} · {ticket.origin === "prefeitura" ? "Approve Prefeitura" : "Approve Requerente"}</p><Badge status={ticket.status} /></Link>) : <p className="p-10 text-sm text-slate-500 dark:text-slate-400">Nenhum chamado criado ainda. As solicitações do Approve aparecerão aqui.</p>}</Card>
+      <Card className="self-start p-6"><BookOpen size={25} className="text-blue-600 dark:text-blue-400" /><h2 className="mt-4 text-lg font-bold">Conhecimento da equipe</h2><p className="mt-2 text-sm leading-7 text-slate-500 dark:text-slate-400">{knowledge.filter(article => article.active).length} artigos disponíveis para orientar a investigação da IA.</p><Link href="/support/conhecimento" className="mt-5 inline-flex items-center gap-2 text-xs font-semibold text-blue-600 dark:text-blue-400">Gerenciar base de conhecimento<ArrowRight size={14} /></Link></Card>
+    </div>
+  </div>;
+}

@@ -1,0 +1,16 @@
+import type { Process, Ticket } from "./types";
+export const initialProcesses: Process[] = [
+  { id: "001", name: "Alvará 001", type: "Alvará", status: "Bloqueado", updatedAt: "2026-10-24T10:00:00Z", information: { applicant: "Ana Demonstração", address: "Rua Modelo, 100 · Centro", activity: "Comércio varejista", notes: "Aguardando revisão do acesso ao envio de documentos." }, requestedInformation: "Confirme o endereço do estabelecimento e detalhe a atividade econômica." },
+  { id: "002", name: "Licença 002", type: "Licença", status: "Em Análise", updatedAt: "2026-10-23T14:00:00Z", information: { applicant: "Ana Demonstração", address: "Avenida Exemplo, 250", activity: "Serviços de arquitetura", notes: "Documentação encaminhada para análise técnica." }, requestedInformation: "Informe os detalhes da atividade e registre as observações técnicas." },
+  { id: "003", name: "Consulta 003", type: "Consulta", status: "Aprovado", updatedAt: "2026-10-22T09:00:00Z", information: { applicant: "Ana Demonstração", address: "Rua das Ideias, 30", activity: "Consulta de viabilidade", notes: "Viabilidade aprovada nesta simulação." }, requestedInformation: "Dados da consulta disponíveis para conferência." },
+  { id: "004", name: "Alvará 004", type: "Alvará", status: "Em Análise", updatedAt: "2026-10-21T09:00:00Z", information: { applicant: "Ana Demonstração", address: "Praça Horizonte, 18", activity: "Café e livraria", notes: "Análise do plano de funcionamento em andamento." }, requestedInformation: "Detalhe o funcionamento e atualize o endereço, se necessário." },
+];
+const cases = [
+  ["Alvará bloqueado no envio de documentos", "Não consigo enviar documentos no alvará. Processo bloqueado.", "Equipe revisou a permissão e liberou o processo para análise."],
+  ["Erro de acesso ao portal", "Usuário não consegue fazer login na conta da prefeitura.", "Cadastro validado e acesso restabelecido pelo administrador."],
+  ["Licença sem atualização de status", "Licença permanece em análise após envio de documentação.", "Fila de análise revisada; documentação validada pela equipe."],
+  ["Documento PDF não anexado", "Upload de documento apresenta erro de tamanho no portal.", "Arquivo reenviado em PDF dentro do limite permitido."],
+  ["Permissão insuficiente para editar processo", "Conta sem permissão para editar os dados do alvará.", "Administrador revisou o perfil de acesso do usuário."],
+  ["Notificação de aprovação não recebida", "Não recebi email após aprovação da consulta.", "Destinatário revisado e notificação reenviada."],
+];
+export const demoHistory: Ticket[] = cases.map(([subject, description, resolution], index) => ({ id: String(1001 + index), subject, description, resolution, name: ["Marina Demo", "Carlos Exemplo", "Beatriz Teste", "Rafael Demo", "Luiza Exemplo", "Pedro Teste"][index], email: `demo${index + 1}@example.com`, account: "Prefeitura Modelo", channel: "Formulário", origin: "historico", status: "Resolvido", source: "Demonstração", createdAt: `2026-10-${String(23 - index).padStart(2, "0")}T13:30:00Z`, triage: "none", messages: [{ id: `demo-${index}`, kind: "customer", content: description, createdAt: "2026-10-20T13:30:00Z" }, { id: `demo-resolution-${index}`, kind: "support", content: resolution, createdAt: "2026-10-23T15:00:00Z" }] }));

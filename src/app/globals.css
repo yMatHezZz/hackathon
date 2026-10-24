@@ -1,0 +1,31 @@
+@import "tailwindcss";
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+:root { --background: #f5f7fa; --foreground: #172033; }
+[data-theme="dark"] { --background: #0b1120; --foreground: #e2e8f0; color-scheme: dark; }
+[data-theme="dark"] .rail-link:hover { background: #1e293b; color: #e2e8f0; }
+[data-theme="dark"] .rail-active { background: #172554; color: #93c5fd; }
+[data-theme="dark"] .header-link { color: #cbd5e1; }
+[data-theme="dark"] .header-link:hover { color: #93c5fd; }
+[data-theme="dark"] .internal-markdown { color: #e2d2af; }
+[data-theme="dark"] .internal-markdown h2, [data-theme="dark"] .internal-markdown h3 { color: #fde68a; }
+body { margin: 0; background: var(--background); color: var(--foreground); font-family: Arial, Helvetica, sans-serif; -webkit-font-smoothing: antialiased; }
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+button:focus-visible, a:focus-visible { outline: 3px solid #60a5fa; outline-offset: 3px; }
+textarea { resize: vertical; }
+.rail-link { display: flex; height: 42px; width: 42px; align-items: center; justify-content: center; border-radius: 10px; color: #94a3b8; transition: 160ms; }
+.rail-link:hover { background: #f1f5f9; color: #334155; }
+.rail-active { background: #eff6ff; color: #2563eb; }
+.header-link { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #475569; }
+.header-link:hover { color: #2563eb; }
+.internal-markdown { overflow-wrap: anywhere; font-size: 12px; line-height: 1.8; color: #6b542b; }
+.internal-markdown h2 { margin: 0 0 16px; font-size: 14px; font-weight: 700; color: #713f12; }
+.internal-markdown h3 { margin: 16px 0 5px; font-size: 12px; font-weight: 700; color: #854d0e; }
+.internal-markdown ul { margin: 4px 0; padding-left: 18px; list-style: disc; }
+.internal-markdown p { margin: 5px 0; }
+.internal-markdown a { color: inherit; text-decoration: underline; }
+.fade-in { animation: enter 300ms ease-out; }
+@keyframes enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }

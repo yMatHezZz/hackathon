@@ -1,0 +1,17 @@
+node_modules/
+.next/
+out/
+coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo
+.env*
+!.env.example
+npm-debug.log*
+.npm-cache/
+artifacts/
+.playwright-mcp/
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

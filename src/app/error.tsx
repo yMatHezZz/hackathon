@@ -1,0 +1,2 @@
+"use client";
+export default function ErrorPage({ reset }: { reset: () => void }) { return <div className="p-12"><h1 className="text-2xl font-bold">Não foi possível abrir esta tela</h1><p className="my-4 text-slate-500 dark:text-slate-400">Tente novamente para recuperar a visualização.</p><button onClick={reset} className="rounded-lg bg-blue-600 px-4 py-2 text-white">Tentar novamente</button></div>; }
