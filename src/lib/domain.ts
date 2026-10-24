@@ -13,6 +13,7 @@ export function validateTicketForm(form: TicketForm): string | null {
 export function updateProcessInformation(processes: Process[], id: string, information: ProcessInformation): Process[] {
   if (!processes.some(process => process.id === id)) throw new Error("Processo não encontrado.");
   const clean = {
+    customFields: information.customFields,
     applicant: information.applicant.trim(),
     address: information.address.trim(),
     activity: information.activity.trim(),

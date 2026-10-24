@@ -27,6 +27,54 @@ async function openTicket(page: Page) {
   await expect(page.getByText("O chamado foi aberto e a equipe técnica já está analisando.", { exact: false })).toBeVisible();
 }
 
+test("formulário low code publica campo, persiste resposta e preserva protocolo", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto("/prefeitura");
+  await page.getByRole("link", { name: "Configurar formulários" }).click();
+  await page.getByLabel("Modelo de processo").selectOption("001");
+  await page.getByRole("button", { name: "Adicionar campo em Dados do imóvel" }).click();
+  const dialog = page.getByRole("dialog", { name: "Adicionar campo", exact: true });
+  await dialog.getByLabel("Rótulo do campo").fill("Ponto de referência");
+  await dialog.getByLabel("Campo obrigatório", { exact: true }).check();
+  await dialog.getByRole("button", { name: "Adicionar ao formulário" }).click();
+  await page.getByRole("button", { name: "Publicar formulário", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Configuração publicada" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Ponto de referência", { exact: true })).toBeVisible();
+  await page.screenshot({ path: "artifacts/e2e/form-builder-desktop.png" });
+  await page.getByRole("tab", { name: "Editor JSON", exact: true }).click();
+  const json = page.getByLabel("Configuração JSON");
+  const published = await json.inputValue();
+  await json.fill('{"version":');
+  await expect(page.getByRole("button", { name: "Publicar formulário", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Recarregar publicado" }).click();
+  await expect(json).toHaveValue(published);
+  await page.goto("/requerente/processos/001");
+  await page.getByLabel("Ponto de referência", { exact: true }).fill("Próximo à praça central");
+  await page.getByRole("button", { name: "Salvar informações", exact: true }).click();
+  await expect(page.getByText("Rascunho salvo no banco local.", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Ponto de referência", { exact: true })).toHaveValue("Próximo à praça central");
+  await page.getByRole("button", { name: "Protocolar solicitação" }).click();
+  await expect(page).toHaveURL(/\/requerente\/processos\/PRC-/);
+  const protocolUrl = page.url();
+  await page.goto("/prefeitura/formularios");
+  await page.getByRole("button", { name: "Remover Ponto de referência", exact: true }).click();
+  await page.getByRole("button", { name: "Publicar formulário", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Configuração publicada" })).toBeVisible();
+  await page.goto(protocolUrl);
+  await expect(page.getByLabel("Ponto de referência", { exact: true })).toHaveValue("Próximo à praça central");
+  await expect(page.getByLabel("Ponto de referência", { exact: true })).toBeDisabled();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/prefeitura/formularios");
+  await expect(page.getByRole("heading", { name: "Formulários do seu jeito.", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Ativar tema escuro", exact: true }).click();
+  await page.screenshot({ path: "artifacts/e2e/form-builder-mobile-dark.png" });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
 test("fluxo completo, nota interna isolada e processo atualizado", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));

@@ -52,6 +52,7 @@ export interface HubSnapshot {
 export interface ReplyDraft { content: string; sources: { id: string; title: string }[] }
 export interface MutationResult { snapshot: HubSnapshot; ticketId?: string; message?: string; draft?: ReplyDraft; processId?: string }
 export interface ProcessInformation {
+  customFields?: Record<string, string | boolean>;
   applicant: string;
   address: string;
   activity: string;
@@ -69,6 +70,8 @@ export interface ProcessInformation {
   feeDueDate?: string;
 }
 export interface Process {
+  formDefinition?: ProcessFormDefinition;
+  formRevision?: number;
   id: string;
   name: string;
   type: string;
@@ -79,4 +82,24 @@ export interface Process {
   templateId?: string;
   protocol?: string;
   submittedAt?: string;
+}
+export type FormFieldType = "text" | "email" | "tel" | "number" | "date" | "textarea" | "select" | "checkbox";
+export interface FormFieldDefinition {
+  id: string;
+  label: string;
+  type: FormFieldType;
+  required?: boolean;
+  placeholder?: string;
+  helpText?: string;
+  width?: "half" | "full";
+  options?: string[];
+  maxLength?: number;
+  min?: number;
+  max?: number;
+  step?: number;
+}
+export interface ProcessFormDefinition {
+  version: 1;
+  title: string;
+  sections: { id: string; title: string; description?: string; fields: FormFieldDefinition[] }[];
 }

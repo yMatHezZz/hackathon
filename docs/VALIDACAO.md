@@ -1,5 +1,14 @@
 # Validação do MVP
 
+## Incremento de formulários configuráveis — 24/10/2026
+
+- `npm test`: 27 testes aprovados em 4 arquivos. Casos novos: schema inválido, IDs duplicados/inseguros, obrigatoriedade/opções/tipos, respostas desconhecidas, configuração e respostas após reabrir SQLite, isolamento por modelo, conflitos de revisão e schema congelado no protocolo.
+- `npm run test:e2e`: 14 testes aprovados em 40,9 segundos, contra build de produção e banco isolado em `artifacts/e2e`. Novo fluxo: adicionar campo visualmente, publicar, recarregar configuração, rejeitar JSON inválido, preencher e salvar resposta no requerente, recarregar, protocolar e preservar o campo histórico após removê-lo do modelo.
+- Lint e TypeScript aprovados; build de produção executado pelo Playwright. Sem dependências novas ou alteração destrutiva do banco.
+- Conferência visual: construtor com prévia no desktop e layout móvel de 390 px em tema escuro; sem overflow horizontal ou erro JavaScript no cenário. Capturas locais em `artifacts/e2e/form-builder-*.png` (ignoradas no Git).
+- Revisão manual focada: schema declarativo sem avaliação de código/HTML, propriedades e tipos limitados, IDs seguros, validação de respostas no servidor, consultas parametrizadas e proteção de origem/localhost mantidas. Codex Security não executado; revisão manual não equivale a scan do produto.
+- Escopo: configura formulários de processos; sem regras condicionais, cálculos, upload ou autenticação real. Novas respostas continuam usando dados fictícios no MVP local.
+
 Execução local em 24/10/2026, Windows, Node.js 24.22.0, npm 11.19.1. Next.js 16.4.3 e React 19.3.1. Testes com dados fictícios; playbook real da equipe importado e conferido localmente, com ocultação heurística de credenciais.
 
 | Verificação | Resultado | Evidência reproduzível |
