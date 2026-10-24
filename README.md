@@ -18,6 +18,7 @@ Abra [localhost:3000](http://localhost:3000). A página inicial oferece acesso a
 | `/requerente` | Cidadão: catálogo de modelos disponíveis e solicitações protocoladas |
 | `/requerente/processos/[id]` | Formulário em página própria, salvamento de rascunho, protocolo e suporte contextual |
 | `/prefeitura` | Analista: formulário editável dos processos e histórico municipal |
+| `/prefeitura/formularios` | Construtor visual, editor JSON e prévia dos formulários por modelo |
 | `/prefeitura/suporte` | Histórico exclusivo das solicitações municipais, com respostas da equipe, sem chat |
 | `/prefeitura/suporte/novo` | Formulário com título, descrição e processo relacionado; botão Solicitar |
 | `/support` | Nolyp: visão geral com indicadores e chamados recentes |
@@ -59,6 +60,30 @@ Para backup, pare o servidor e copie o diretório `data` inteiro. Preserve tamb�
 - `ApproveDashboard` compartilha o sistema visual dos portais. Somente o requerente monta `SupportWidget`. O header concentra os hiperlinks dos ambientes e o acesso municipal ao suporte. Os processos não exibem status, filtros por status ou contadores de andamento. Os status dos chamados de suporte continuam disponíveis.
 - `src/lib/server/repository.ts`: transações SQLite, consultas parametrizadas, snapshots e persistência das ações. O desbloqueio e o log pertencem à mesma transação.
 - `src/app/api`: endpoints de chamados, processos e conhecimento. Validam campos, enumerações, referências e tamanho do corpo no servidor. O MVP escuta em `127.0.0.1`; as APIs recusam hosts externos e mutações de origem cruzada.
+
+## Formulários configuráveis
+
+Em **Prefeitura → Configurar formulários**, selecione o modelo e clique **Adicionar campo** na seção desejada. Informe rótulo, tipo e obrigatoriedade; campos de seleção recebem uma opção por linha. É possível editar, ordenar e remover campos, adicionar seções e conferir a prévia. Clique **Publicar formulário** para salvar no SQLite e atualizar os dois portais. A prévia não salva respostas.
+
+O **Editor JSON** permite configurar o mesmo formulário diretamente. Exemplo de campo para inserir no array `fields` de uma seção:
+
+```json
+{
+  "id": "custom_ponto_referencia",
+  "label": "Ponto de referência",
+  "type": "text",
+  "required": true,
+  "width": "full",
+  "maxLength": 250,
+  "helpText": "Informe uma referência próxima ao imóvel."
+}
+```
+
+O documento completo usa `{ "version": 1, "title": "Solicitação", "sections": [...] }`. Cada seção tem `id`, `title`, `description` opcional e `fields`. Tipos: `text`, `textarea`, `email`, `tel`, `number`, `date`, `select` e `checkbox`. Uma seleção usa `options: ["Urbana", "Rural"]`; números aceitam `min`, `max` e `step`; textos aceitam `maxLength` e `placeholder`. O modelo inicial está em `src/lib/form-schema.ts`.
+
+As configurações têm até 12 seções e 100 campos, com IDs únicos e estáveis. Campos novos são gravados em `information.customFields`. O servidor valida tipos, obrigatoriedade, opções, tamanho, datas e números; JSON inválido ou propriedades desconhecidas impedem publicação. Os campos essenciais `applicant`, `activity` e `address` permanecem obrigatórios; tipos e limites dos campos originais são preservados. Para mudar o tipo de um campo publicado, crie outro ID.
+
+Cada modelo mantém sua configuração e revisão. Publicações simultâneas retornam conflito em vez de sobrescrever alterações; **Recarregar publicado** descarta a edição local e recupera a configuração recebida do servidor. Remover um campo do layout conserva as respostas já salvas. Novos protocolos guardam uma cópia do schema usado no envio; mudanças posteriores no modelo não alteram esse formulário histórico. Configuração e respostas usam o payload JSON existente do SQLite, sem migration destrutiva ou serviço adicional.
 
 ## Base de conhecimento
 

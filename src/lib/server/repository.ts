@@ -8,6 +8,8 @@ import { initialProcesses } from "../demo-data";
 import { executeCommand, updateProcessInformation } from "../domain";
 import { investigateTicket } from "../ai-triage";
 import { AppError, articleInput, priority, processInformation, status, text, ticketForm } from "./validation";
+import { defaultFormDefinition, parseFormDefinition, validateConfiguredInformation, validateCustomFields } from "../form-schema";
+import { object } from "./validation";
 
 export class HubRepository {
   private db: DatabaseSync;
@@ -97,7 +99,13 @@ export class HubRepository {
       const row = this.db.prepare("SELECT payload FROM processes WHERE id=?").get(id);
       if (!row) throw new AppError("Processo não encontrado.", 404);
       let process: Process;
-      try { [process] = updateProcessInformation([JSON.parse(String(row.payload)) as Process], id, information); }
+      try {
+        const previous = JSON.parse(String(row.payload)) as Process;
+        const schema = previous.formDefinition ?? defaultFormDefinition;
+        information.customFields = validateCustomFields(schema, information.customFields, previous.information.customFields);
+        validateConfiguredInformation(schema, information);
+        [process] = updateProcessInformation([previous], id, information);
+      }
       catch (error) { throw new AppError(error instanceof Error ? error.message : "Informações do processo inválidas."); }
       this.db.prepare("UPDATE processes SET payload=? WHERE id=?").run(JSON.stringify(process), id);
     });
@@ -110,7 +118,14 @@ export class HubRepository {
       const template = JSON.parse(String(row.payload)) as Process;
       if (template.protocol) return template;
       let prepared: Process;
-      try { [prepared] = updateProcessInformation([template], id, information); }
+      try {
+        const schema = template.formDefinition ?? defaultFormDefinition;
+        information.customFields = validateCustomFields(schema, information.customFields, template.information.customFields);
+        validateConfiguredInformation(schema, information);
+        [prepared] = updateProcessInformation([template], id, information);
+        prepared.formDefinition = schema;
+        prepared.formRevision = template.formRevision ?? 1;
+      }
       catch (error) { throw new AppError(error instanceof Error ? error.message : "Revise os dados do formulário."); }
       const processId = `PRC-${randomUUID().slice(0, 12).toUpperCase()}`;
       const now = new Date().toISOString();
@@ -118,6 +133,26 @@ export class HubRepository {
       const submitted = { ...prepared, id: processId, templateId: template.id, protocol: `NLP-${new Date().getFullYear()}-${String(sequence).padStart(6, "0")}`, submittedAt: now, updatedAt: now };
       this.db.prepare("INSERT INTO processes(id,payload) VALUES (?,?)").run(processId, JSON.stringify(submitted));
       return submitted;
+    });
+  }
+  saveFormDefinition(id: string, value: unknown) {
+    const input = object(value);
+    let definition;
+    try { definition = parseFormDefinition(input.definition); }
+    catch (error) { throw new AppError(error instanceof Error ? error.message : "Configuração inválida."); }
+    this.transaction(() => {
+      const row = this.db.prepare("SELECT payload FROM processes WHERE id=?").get(id);
+      if (!row) throw new AppError("Modelo não encontrado.", 404);
+      const process = JSON.parse(String(row.payload)) as Process;
+      if (process.protocol) throw new AppError("Não é possível configurar um processo protocolado.");
+      const revision = process.formRevision ?? 1;
+      if (input.expectedRevision !== revision) throw new AppError("Configuração atualizada por outra sessão. Recarregue o modelo antes de publicar.", 409);
+      const previous = process.formDefinition ?? defaultFormDefinition;
+      for (const field of previous.sections.flatMap(section => section.fields)) {
+        const next = definition.sections.flatMap(section => section.fields).find(item => item.id === field.id);
+        if (next && next.type !== field.type) throw new AppError("Para alterar o tipo de um campo existente, crie um novo ID.");
+      }
+      this.db.prepare("UPDATE processes SET payload=? WHERE id=?").run(JSON.stringify({ ...process, formDefinition: definition, formRevision: revision + 1, updatedAt: new Date().toISOString() }), id);
     });
   }
   suggestReply(id: string) {

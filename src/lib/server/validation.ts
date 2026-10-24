@@ -34,7 +34,15 @@ export function articleInput(value: unknown): ArticleInput {
 }
 export function processInformation(value: unknown): ProcessInformation {
   const input = object(value);
+  const customFields: Record<string, string | boolean> = {};
+  const entries = Object.entries(object(input.customFields ?? {}));
+  if (entries.length > 200) throw new AppError("Quantidade de respostas excedida.");
+  for (const [id, value] of entries) {
+    if (!/^[a-zA-Z][a-zA-Z0-9_]{0,59}$/.test(id) || ["constructor", "prototype", "customFields"].includes(id) || (typeof value !== "boolean" && (typeof value !== "string" || value.length > 4000))) throw new AppError("Resposta de campo inválida.");
+    customFields[id] = value as string | boolean;
+  }
   return {
+    customFields,
     applicant: text(input.applicant, 150, "Requerente"), address: text(input.address, 250, "Endereço"), activity: text(input.activity, 250, "Atividade"), notes: text(input.notes, 2000, "Observações", 0),
     applicantEmail: text(input.applicantEmail ?? "", 254, "E-mail", 0), applicantDocument: text(input.applicantDocument ?? "", 30, "Documento", 0), applicantPhone: text(input.applicantPhone ?? "", 40, "Telefone", 0),
     requestType: text(input.requestType ?? "Emissão", 40, "Tipo de solicitação"), propertyRegistration: text(input.propertyRegistration ?? "", 80, "Inscrição imobiliária", 0), propertyArea: text(input.propertyArea ?? "", 30, "Área", 0), propertyUse: text(input.propertyUse ?? "", 120, "Uso do imóvel", 0),

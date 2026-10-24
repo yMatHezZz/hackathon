@@ -64,3 +64,8 @@ Arquitetura: Next.js App Router, TypeScript, Tailwind, React Context. Estado em 
 Critério de aceite: abrir chamado mantém status Aberto; nota interna tem os seis blocos exigidos; comando “Desbloquear Alvará 001” altera o processo e gera log; Approve exibe a mudança ao retornar; cliente não vê investigação. Vazio, carregamento e erro têm estados legíveis.
 
 Decisões locais: conta/prefeitura tem campo próprio; IA é heurística local com delay; sem autenticação, persistência, sincronização entre abas ou conexão real com prefeitura. Não se destina a uso com dados reais.
+## Incremento: formulários configuráveis por JSON
+
+Objetivo: configuração por modelo em `/prefeitura/formularios`, com adição visual de campos, edição JSON e prévia. Reutilizar o renderer nos dois portais. Persistir schema e respostas no SQLite existente, conservando respostas removidas do layout e congelando o schema no protocolo.
+
+Módulos: `form-schema`, tipos, validação/repositório/API, contexto, formulário e construtor municipal. Aceite: adicionar um campo, publicar, preencher no requerente e recuperar o valor após recarregar; publicação concorrente recusada; modelos independentes e protocolos preservados. Validação: testes de schema/persistência, Playwright, lint, tipos e build. Sem novas dependências ou serviços.

@@ -5,6 +5,7 @@ import type { ArticleInput, HubSnapshot, KnowledgeArticle, MutationResult, Proce
 import { loadTickets } from "@/lib/csv-loader";
 import { initialProcesses } from "@/lib/demo-data";
 import { api } from "@/lib/client-api";
+import type { ProcessFormDefinition } from "@/lib/types";
 
 interface HubState {
   tickets: Ticket[];
@@ -17,6 +18,7 @@ interface HubState {
   dataSource: string;
 }
 interface HubContext extends HubState {
+  saveFormDefinition: (id: string, definition: ProcessFormDefinition, expectedRevision: number) => Promise<void>;
   compactView: boolean;
   setCompactView: (compact: boolean) => void;
   refresh: () => Promise<void>;
@@ -90,6 +92,7 @@ export function GlobalProvider({ children }: { children: ReactNode }) {
     return result.ticketId;
   }, [mutate]);
   const saveProcess = useCallback(async (id: string, information: ProcessInformation) => { await mutate(`/api/processes/${encodeURIComponent(id)}`, information); }, [mutate]);
+  const saveFormDefinition = useCallback(async (id: string, definition: ProcessFormDefinition, expectedRevision: number) => { await mutate(`/api/processes/${encodeURIComponent(id)}/form-schema`, { definition, expectedRevision }); }, [mutate]);
   const addReply = useCallback(async (id: string, content: string, kind: "customer" | "support") => { await mutate(`/api/tickets/${encodeURIComponent(id)}`, { action: "reply", content, kind }); }, [mutate]);
   const setTicketStatus = useCallback(async (id: string, status: TicketStatus) => { await mutate(`/api/tickets/${encodeURIComponent(id)}`, { action: "status", status }); }, [mutate]);
   const setTicketPriority = useCallback(async (id: string, priority: TicketPriority) => { await mutate(`/api/tickets/${encodeURIComponent(id)}`, { action: "priority", priority }); }, [mutate]);
@@ -110,6 +113,6 @@ export function GlobalProvider({ children }: { children: ReactNode }) {
     return result.draft;
   }, [mutate]);
 
-  return <GlobalContext.Provider value={{ ...state, compactView, setCompactView, refresh, saveProcess, createTicket, addReply, setTicketStatus, setTicketPriority, runCommand, retryTriage, saveArticle, submitProcess, suggestReply }}>{children}</GlobalContext.Provider>;
+  return <GlobalContext.Provider value={{ ...state, compactView, setCompactView, refresh, saveProcess, saveFormDefinition, createTicket, addReply, setTicketStatus, setTicketPriority, runCommand, retryTriage, saveArticle, submitProcess, suggestReply }}>{children}</GlobalContext.Provider>;
 }
 export function useGlobal() { const context = useContext(GlobalContext); if (!context) throw new Error("useGlobal precisa de GlobalProvider"); return context; }
